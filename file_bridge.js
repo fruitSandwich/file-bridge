@@ -1,5 +1,4 @@
 #!/usr/bin/env node
-const { createServer } = require('http')
 const Querystring = require('querystring')
 
 const PORT = 6666
@@ -7,39 +6,44 @@ const router = make_router()
 const provider_manager = make_provider_manager()
 let provider_id = 0
 
-createServer(
-  async function handle(request, response) {
-    try {
-      // console.log('receive request', request.url)
-      const [path_target, ...querystring] = request.url.split('?') // 第一个问号前是 path，之后是 query
-      let { lang, ...query } = Querystring.parse(querystring.join('?'))
-      lang ||= 'cn' // 默认中文
-      if (!['cn', 'en'].includes(lang))  // 遇到不支持的语言就使用英文
-        lang = 'en'
+const https = require('https')
+const fs = require('fs')
+const key = fs.readFileSync('./private.key')
+const cert = fs.readFileSync('./localhost.cert')
+const options = { key, cert }
 
-      const handler = router.find(({ path, method = 'GET' }) => path == path_target && method == request.method)
-      if(handler)
-        await handler.handle(make_request_context(request, response, lang, query))
-      else {
-        response.writeHead(404)
-        response.end('404')
-      }
+https.createServer(options, async function handle(request, response) {
+    try {
+        // console.log('receive request', request.url)
+        const [path_target, ...querystring] = request.url.split('?') // 第一个问号前是 path，之后是 query
+        let { lang, ...query } = Querystring.parse(querystring.join('?'))
+        lang ||= 'cn' // 默认中文
+        if (!['cn', 'en'].includes(lang))  // 遇到不支持的语言就使用英文
+            lang = 'en'
+
+        const handler = router.find(({ path, method = 'GET' }) => path == path_target && method == request.method)
+        if (handler)
+            await handler.handle(make_request_context(request, response, lang, query))
+        else {
+            response.writeHead(404)
+            response.end('404')
+        }
     } catch (err) {
-      console.error('error occured on handling request:', err)
+        console.error('error occured on handling request:', err)
     }
-  }
-).listen(PORT, () =>
-  console.log('file bridge started on ', PORT)
+}).listen(PORT, () =>
+    console.log('file bridge started on ', PORT)
 )
 
+
 function make_router() {
-  const lang = (cn, en) => ({ cn, en })
-  const lang_common = {
-    title: lang('文件桥', 'File Bridge'),
-    title_: (lang, key) => lang_common.title[key] + ' ' + lang[key],
-  }
-  // 渲染目录树
-  const File_tree = lang_key => `
+    const lang = (cn, en) => ({ cn, en })
+    const lang_common = {
+        title: lang('文件桥', 'File Bridge'),
+        title_: (lang, key) => lang_common.title[key] + ' ' + lang[key],
+    }
+    // 渲染目录树
+    const File_tree = lang_key => `
     <main></main>
     <script>
       function make_tree_details(dir_handle) { // 文件夹节点
@@ -95,14 +99,14 @@ function make_router() {
     </style>
   `
 
-  return [ // 路由列表
-    { // 页面：提供端
-      path: '/',
-      handle({ lang_key, respond_html }) {
-        respond_html(
-          lang_key,
-          lang_common.title_(lang('提供端', '- Provider'), lang_key),
-          `
+    return [ // 路由列表
+        { // 页面：提供端
+            path: '/',
+            handle({ lang_key, respond_html }) {
+                respond_html(
+                    lang_key,
+                    lang_common.title_(lang('提供端', '- Provider'), lang_key),
+                    `
             <p>
               <button onclick="serve()">${lang('选择目录', 'Select a directory')[lang_key]}</button>
             </p>
@@ -226,63 +230,63 @@ function make_router() {
               }
             </script>
           `
-        )
-      }
-    },
-    { // 提供端接口：上报提供端状态“已就绪”
-      method: 'POST',
-      path: '/provider',
-      async handle({ json, success }) {
-        const { provider_id, root_dir_name } = await json.read()
-        provider_manager.set_provider(provider_id, root_dir_name)
-        success()
-      }
-    },
-    { // 提供端接口：心跳（保持与桥的连接）、获取请求任务
-      path: '/heart_beat',
-      handle({ query, json }) {
-        const provider = provider_manager.get_provider(query.id)
-        if (provider) {
-          let task = provider.wait.check()
-          if (task) {
-            const { id, params, type } = task
-            json.write({ task: { id, [type]: params } })
-          } else
-            json.write({ nothing: true })
-        } else
-          json.write({ unknown_provider: true })
-      }
-    },
-    { // 提供端接口：post download
-      method: 'POST',
-      path: '/download',
-      method: 'POST',
-      async handle({ req, query, success }) {
-        await provider_manager.get_provider(query.provider_id).wait
-          .get_respond_wrapper(parseInt(query.task_id))(req)
-        success() // 这个响应是发给提供端的：“你已经上传成功了”
-      }
-    },
-    { // 提供端接口：post ls
-      method: 'POST',
-      path: '/ls',
-      async handle({ query, json, success }) {
-        await provider_manager.get_provider(query.provider_id).wait
-          .get_respond_wrapper(parseInt(query.task_id))(await json.read())
-        success() // 这个响应是发给提供端的：“你已经上传成功了”
-      }
-    },
+                )
+            }
+        },
+        { // 提供端接口：上报提供端状态“已就绪”
+            method: 'POST',
+            path: '/provider',
+            async handle({ json, success }) {
+                const { provider_id, root_dir_name } = await json.read()
+                provider_manager.set_provider(provider_id, root_dir_name)
+                success()
+            }
+        },
+        { // 提供端接口：心跳（保持与桥的连接）、获取请求任务
+            path: '/heart_beat',
+            handle({ query, json }) {
+                const provider = provider_manager.get_provider(query.id)
+                if (provider) {
+                    let task = provider.wait.check()
+                    if (task) {
+                        const { id, params, type } = task
+                        json.write({ task: { id, [type]: params } })
+                    } else
+                        json.write({ nothing: true })
+                } else
+                    json.write({ unknown_provider: true })
+            }
+        },
+        { // 提供端接口：post download
+            method: 'POST',
+            path: '/download',
+            method: 'POST',
+            async handle({ req, query, success }) {
+                await provider_manager.get_provider(query.provider_id).wait
+                    .get_respond_wrapper(parseInt(query.task_id))(req)
+                success() // 这个响应是发给提供端的：“你已经上传成功了”
+            }
+        },
+        { // 提供端接口：post ls
+            method: 'POST',
+            path: '/ls',
+            async handle({ query, json, success }) {
+                await provider_manager.get_provider(query.provider_id).wait
+                    .get_respond_wrapper(parseInt(query.task_id))(await json.read())
+                success() // 这个响应是发给提供端的：“你已经上传成功了”
+            }
+        },
 
-    { // 页面：下载端
-      path: '/downloader',
-      handle({ query, lang_key, respond_html, res }) {
-        const provider = provider_manager.get_provider(query.id)
-        if (!provider)
-          return res.end('no provider: ' + query.id)
-        respond_html(
-          lang_key,
-          lang_common.title_(lang('下载端', '- Downloader'), lang_key),
-          File_tree(lang_key) + `
+        { // 页面：下载端
+            path: '/downloader',
+            handle({ query, lang_key, respond_html, res }) {
+                const provider = provider_manager.get_provider(query.id)
+                if (!provider)
+                    return res.end('no provider: ' + query.id)
+                respond_html(
+                    lang_key,
+                    lang_common.title_(lang('下载端', '- Downloader'), lang_key),
+                    File_tree(lang_key) + `
             <script>
               const provider_id = '${query.id}'
               document.querySelector('main').replaceChildren(
@@ -313,108 +317,108 @@ function make_router() {
               }
             </script>
           `
-        )
-      }
-    },
-    { // 下载端接口：获取提供端目录
-      path: '/ls',
-      handle({ query, json }) {
-        provider_manager.get_provider(query.id).wait.push('ls', query.path, list => json.write(list))
-      }
-    },
-    { // 下载端接口：下载文件
-      path: '/download',
-      handle({ res, query }) {
-        provider_manager.get_provider(query.id).wait.push('download', query.path,
-          function sending_file(provider_req) {
-            res.writeHead(200, {
-              'Content-Type': 'application/octet-stream',
-              'Content-Disposition': 'attachment; filename=' + encodeURIComponent(query.path.split('/').at(-1)),
-            })
-            provider_req.pipe(res)
-            return new Promise((resolve, reject) => {
-              provider_req.on('error', reject)
-              provider_req.on('end', resolve)
-            })
-          }
-        )
-      }
-    }
-  ]
+                )
+            }
+        },
+        { // 下载端接口：获取提供端目录
+            path: '/ls',
+            handle({ query, json }) {
+                provider_manager.get_provider(query.id).wait.push('ls', query.path, list => json.write(list))
+            }
+        },
+        { // 下载端接口：下载文件
+            path: '/download',
+            handle({ res, query }) {
+                provider_manager.get_provider(query.id).wait.push('download', query.path,
+                    function sending_file(provider_req) {
+                        res.writeHead(200, {
+                            'Content-Type': 'application/octet-stream',
+                            'Content-Disposition': 'attachment; filename=' + encodeURIComponent(query.path.split('/').at(-1)),
+                        })
+                        provider_req.pipe(res)
+                        return new Promise((resolve, reject) => {
+                            provider_req.on('error', reject)
+                            provider_req.on('end', resolve)
+                        })
+                    }
+                )
+            }
+        }
+    ]
 }
 
 function make_provider_manager() {
-  let wait_id = 0
-  const map = new Map() // Map<provider_id => provider>
+    let wait_id = 0
+    const map = new Map() // Map<provider_id => provider>
 
-  class Wait { // 请求的等待
-    #map = new Map()
-    #to_check = [] // 先进先出
-    push(type, params, respond) { // type: 请求类型（现在有 ls 和 download 两种）, params: 请求的参数, respond: 响应请求
-      const id = ++wait_id
-      const item = { type, id, params, respond }
-      this.#map.set(id, item)
-      this.#to_check.push(item) // 推进去（最后一个）
-      console.log('new waiting', type, id, params)
-    }
-    check() {
-      const target = this.#to_check.shift() // 取出来（第一个）
-      if (target)
-        console.log('checking task', target)
-      return target
-    }
-    get_respond_wrapper(id) {
-      const target = this.#map.get(id)
-      return async (...args) => {
-        try {
-          console.log('responding wait', id, target.type, target.params)
-          await target.respond(...args)
-          console.log('responded', id)
-        } catch (err) {
-          console.error(`error on responding Wait(${target.type}, ${id}, ${target.params}): `, err)
+    class Wait { // 请求的等待
+        #map = new Map()
+        #to_check = [] // 先进先出
+        push(type, params, respond) { // type: 请求类型（现在有 ls 和 download 两种）, params: 请求的参数, respond: 响应请求
+            const id = ++wait_id
+            const item = { type, id, params, respond }
+            this.#map.set(id, item)
+            this.#to_check.push(item) // 推进去（最后一个）
+            console.log('new waiting', type, id, params)
         }
-        this.#map.delete(id)
-      }
+        check() {
+            const target = this.#to_check.shift() // 取出来（第一个）
+            if (target)
+                console.log('checking task', target)
+            return target
+        }
+        get_respond_wrapper(id) {
+            const target = this.#map.get(id)
+            return async (...args) => {
+                try {
+                    console.log('responding wait', id, target.type, target.params)
+                    await target.respond(...args)
+                    console.log('responded', id)
+                } catch (err) {
+                    console.error(`error on responding Wait(${target.type}, ${id}, ${target.params}): `, err)
+                }
+                this.#map.delete(id)
+            }
+        }
     }
-  }
-  return { // 这个对象用来管理“提供端”
-    get_provider: id => map.get(id),
-    set_provider(id, root_dir_name) { // 管理端上报自己的目录结构，开始 serving
-      console.log('setting up provider', { id, root_dir_name })
-      if (!map.has(id)) // 如果 map 里没有，则是一个新的管理端；如果有，则是管理端重选了 serving 目录
-        map.set(id, { // 这个就是 provider
-          wait: new Wait()
-        })
-      map.get(id).root_name = root_dir_name
+    return { // 这个对象用来管理“提供端”
+        get_provider: id => map.get(id),
+        set_provider(id, root_dir_name) { // 管理端上报自己的目录结构，开始 serving
+            console.log('setting up provider', { id, root_dir_name })
+            if (!map.has(id)) // 如果 map 里没有，则是一个新的管理端；如果有，则是管理端重选了 serving 目录
+                map.set(id, { // 这个就是 provider
+                    wait: new Wait()
+                })
+            map.get(id).root_name = root_dir_name
+        }
     }
-  }
 }
 
 function make_request_context(request, response, lang_key, query) {
-  const json = { // 读写 json 数据
-    read: () => new Promise((resolve, reject) => {
-      const result = []
-      request.on('data', chunk => result.push(chunk))
-      request.on('end', () => resolve(JSON.parse(result.join(''))))
-      request.on('error', reject)
-    }),
-    write: data => {
-      response.writeHead(200, {
-        'Content-Type': 'application/json'
-      })
-      response.end(JSON.stringify(data))
+    const json = { // 读写 json 数据
+        read: () => new Promise((resolve, reject) => {
+            const result = []
+            request.on('data', chunk => result.push(chunk))
+            request.on('end', () => resolve(JSON.parse(result.join(''))))
+            request.on('error', reject)
+        }),
+        write: data => {
+            response.writeHead(200, {
+                'Content-Type': 'application/json'
+            })
+            response.end(JSON.stringify(data))
+        }
     }
-  }
-  return {
-    req: request,
-    res: response,
-    lang_key, query, json,
-    success() { // 写入响应：成功
-      json.write('success')
-    },
-    respond_html(lang, title, body) { // 写入响应：页面（html）
-      response.writeHead(200, { 'Content-Type': 'text/html;charset=utf8' })
-      response.end(`
+    return {
+        req: request,
+        res: response,
+        lang_key, query, json,
+        success() { // 写入响应：成功
+            json.write('success')
+        },
+        respond_html(lang, title, body) { // 写入响应：页面（html）
+            response.writeHead(200, { 'Content-Type': 'text/html;charset=utf8' })
+            response.end(`
         <!DOCTYPE html>
         <html lang='${{ cn: 'zh', en: 'en' }[lang]}'>
           <head>
@@ -485,6 +489,6 @@ function make_request_context(request, response, lang_key, query) {
           </body>
         </html>
       `)
+        }
     }
-  }
 }
