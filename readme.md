@@ -24,6 +24,10 @@ node file_bridge.js
 > 一般 codespace 会用网页版 vscode 打开，执行 `node file_bridge.js` 之后，会提示你“在浏览器中打开”。
 > 如果未提示，需要在“终端”面板旁边的“端口”面板里手动添加端口映射（现在用的是 6666），添加之后，旁边会有访问链接。
 
+**本地生成https证书方式
+openssl genrsa -out private.key 2048
+openssl req -nodes -new -x509 -keyout ./private.key -out ./localhost.cert
+
 ## 原理
 两个“客户端”之间没法直接“传递数据”，因为没有公网地址，于是就需要一个“桥”，连接两个“客户端”。  
 提供文件供人下载的，我在这里叫它“提供端”，另一个叫“下载端”。  
